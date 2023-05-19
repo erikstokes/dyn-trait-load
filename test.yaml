@@ -1,0 +1,3 @@
+tests:
+  - {"NAME": "A", x: 123, y: 345 }
+  - {"NAME": "B", name: hello, size: 2000000}
