@@ -1,6 +1,7 @@
-use std::{io::Read, marker::PhantomData};
+use std::io::Read;
 
 use serde::{Deserialize, Serialize};
+use clap::Parser;
 
 trait Data {}
 
@@ -10,64 +11,117 @@ impl<'a, T: ?Sized> Data for &'a T where T: Data {}
 impl Data for u32 {}
 impl Data for i64 {}
 
-// trait AsRunner {
-//     fn as_runner(&self) -> &(dyn Runner + 'static);
-// }
 
-trait Test: std::fmt::Debug {
-    type Data;
-    fn test(&self, data: &Self::Data) -> bool;
+trait Test<D: Data>: std::fmt::Debug {
+    fn test(&self, data: &D) -> bool;
 }
 
-#[typetag::serde(tag = "NAME")]
-trait TestTag: std::fmt::Debug + Test<Data=u32>  {}
-
-#[derive(Debug, Deserialize)]
-struct TestArray
+trait GenericTestExecutor
 {
-    tests: Vec<Box<dyn TestTag>>,
+    fn generic_run_tests<D: Data>(&self, data: &D) {
+        let results: Vec<bool> = self.generic_tests().iter()
+                                    .map(|t| t.test(data))
+                                    .collect();
+        dbg!(results);
+    }
+    fn generic_tests<D: Data>(&self) -> Vec<Box<dyn Test<D>>>;
+}
+
+
+impl<'a, T: ?Sized + std::iter::Iterator> GenericTestExecutor for Box<T>
+where
+    T: GenericTestExecutor,
+{
+    fn generic_run_tests<D: Data>(&self, data: &D) {
+        (**self).generic_run_tests(data)
+    }
+
+    fn generic_tests<D:Data>(&self) -> Vec<Box<dyn Test<D>>> {
+        (**self).generic_tests()
+}
 
 }
 
-// trait GenericRunner {
-//     fn generic_test<D: Data>(&self, data: D) -> bool;
-// }
+trait TestExecutor {
+    fn run_tests(&self, data: &dyn Data);
+    fn tests(&self) -> Vec<Box<dyn Test<dyn Data>>>;
+}
 
-// impl<'a, T: ?Sized> GenericRunner for Box<T>
-// where
-//     T: GenericRunner,
-// {
-//     fn generic_test<D: Data>(&self, data: D) -> bool {
-//         (**self).generic_test(data)
+impl GenericTestExecutor for dyn TestExecutor {
+    fn generic_run_tests<D: Data>(&self, data: &D) {
+        self.run_tests(data)
+    }
+
+    fn generic_tests<D:Data>(&self) -> Vec<Box<dyn Test<D>>> {
+        self.tests()
+    }
+}
+
+pub mod test32 {
+    type DataType = i64;
+
+    #[typetag::serde(tag = "NAME")]
+    pub(super) trait TestTag: std::fmt::Debug + super::Test<DataType>  {}
+
+    #[derive(Debug, super::Deserialize)]
+    pub(super) struct TestArray
+    {
+        pub(super) tests: Vec<Box<dyn TestTag>>,
+
+    }
+
+    impl IntoIterator for TestArray {
+        type Item = Box<dyn TestTag>;
+
+        type IntoIter = ::std::vec::IntoIter<Self::Item>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.tests.into_iter()
+        }
+    }
+
+    impl super::GenericTestExecutor for TestArray {
+        fn generic_tests<D:Data>(&self) -> Vec<Box<dyn super::Test<DataType>>> {
+            let out = vec![];
+
+            out
+        }
+    }
+
+}
+
+// pub mod test64 {
+//     type DataType = i64;
+
+//     #[typetag::serde(tag = "NAME")]
+//     pub(super) trait TestTag: std::fmt::Debug + super::Test<DataType>  {}
+
+//     #[derive(Debug, super::Deserialize)]
+//     pub(super) struct TestArray
+//     {
+//         pub(super) tests: Vec<Box<dyn TestTag>>,
+
 //     }
-// }
 
-// trait Runner {
-//     fn do_test(&self, data: &dyn Data) -> bool;
-// }
+//     impl IntoIterator for TestArray {
+//         type Item = Box<dyn TestTag>;
 
-// impl GenericRunner for dyn Runner
-// {
-//     fn generic_test<D: Data>(&self, data: D) -> bool {
-//         self.do_test(&data)
+//         type IntoIter = ::std::vec::IntoIter<Self::Item>;
+
+//         fn into_iter(self) -> Self::IntoIter {
+//             self.tests.into_iter()
+//         }
 //     }
+
+//     impl super::GenericTestExecutor for TestArray {}
 // }
 
-// impl<T> Runner for T
-// where
-//     T: GenericRunner
-// {
-//     fn do_test(&self, data: &dyn Data) -> bool {
-//         self.generic_test(data)
-//     }
-// }
+// Actual structs used to test
 
 #[derive(Serialize, Deserialize, Debug)]
-struct A<D: Data> {
+struct A {
     x: u32,
     y: u32,
-    #[serde(skip_serializing, default)]
-    phantom: PhantomData<D>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -76,59 +130,60 @@ struct B {
     size: usize,
 }
 
-#[typetag::serde]
-impl TestTag for A<u32> {}
+// boilerplate for loading things from input file
 
-impl Test for A<u32> {
-    type Data = u32;
+#[typetag::serde]
+impl test32::TestTag for A {}
+
+
+#[typetag::serde]
+impl test32::TestTag for B {}
+
+// #[typetag::serde]
+// impl test64::TestTag for A {}
+
+
+// #[typetag::serde]
+// impl test64::TestTag for B {}
+
+// Implementations for the various tests
+
+impl Test<u32> for A {
     fn test(&self, data: &u32) -> bool {
-        self.self_test(data)
+println!("Testing A 32");
+        true
     }
 }
 
-impl Test for A<i64> {
-    type Data = i64;
+impl Test<i64> for A {
     fn test(&self, _data: &i64) -> bool {
-        panic!("this is bad")
+        println!("Testing A 64");
+        true
     }
 }
 
-
-// impl<T> AsRunner for T
-// where T: Runner + 'static
-// {
-//     fn as_runner<'a>(&'a self) -> &(dyn Runner + 'static) {
-//         self
-//     }
-// }
-
-impl A<u32> {
-    fn self_test(&self, data: &u32) -> bool {
-        *data <= self.x + self.y
+impl Test<i64> for B {
+    fn test(&self, _data: &i64) -> bool {
+        println!("Testing B 64");
+        true
     }
 }
 
-// impl GenericRunner for A<u32> {
-//     fn generic_test<D: Data>(&self, data: D) -> bool
-//     {
-//         println!("generic test");
-//         true
-//     }
-// }
-
-#[typetag::serde]
-impl TestTag for B {}
-
-impl Test for B {
-    type Data = u32;
-    fn test(&self, _data: &Self::Data) -> bool {
+impl Test<u32> for B {
+    fn test(&self, _data: &u32) -> bool {
+        println!("Testing B 32");
         false
     }
 }
 
-
+#[derive(clap::Parser)]
+struct Args {
+    /// The size of input to test. Either 32 or 64
+    size: u32,
+}
 
 fn main() {
+    let args = Args::parse();
     let data = {
         let mut data = "".to_string();
         std::fs::File::open("test.yaml")
@@ -137,11 +192,16 @@ fn main() {
             .unwrap();
         data
     };
-    let tests: TestArray = serde_yaml::from_str(&data).unwrap();
-    // let test: Box<dyn Runner> = Box::new(A { x:1, y:2});
-    // let t = test.as_runner();
-    for test in tests.tests.iter() {
-        println!("test, {:?} {}", test, test.test(&123));
-    }
 
+    // let tests: &dyn TestExecutor = match args.size {
+    //     32 => &serde_yaml::from_str::<test32::TestArray>(&data).unwrap(),
+    //     64 => &serde_yaml::from_str::<test64::TestArray>(&data).unwrap(),
+    //     _ => panic!("bad size"),
+    // };
+
+    // // let test: Box<dyn Runner> = Box::new(A { x:1, y:2});
+    // // let t = test.as_runner();
+    // for test in tests.tests.iter() {
+    //     println!("test, {:?} {}", test, test.test(&123));
+    // }
 }
