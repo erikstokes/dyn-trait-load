@@ -1,7 +1,5 @@
-use std::io::Read;
-
 use serde::{Deserialize, Serialize};
-use clap::Parser;
+use clap::{ValueEnum, Parser};
 
 trait Data {}
 
@@ -124,10 +122,13 @@ impl Test<u32> for B {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
+enum InputSize {Small, Big}
+
 #[derive(clap::Parser)]
 struct Args {
     /// The size of input to test. Either 32 or 64
-    size: u32,
+    size: InputSize,
 }
 
 fn run_tests<A: Test<D> + ?Sized, D:Data>(array: &Vec<Box<A>>, data: &D)
@@ -139,25 +140,20 @@ fn run_tests<A: Test<D> + ?Sized, D:Data>(array: &Vec<Box<A>>, data: &D)
 
 fn main() {
     let args = Args::parse();
-    let data = {
-        let mut data = "".to_string();
-        std::fs::File::open("test.yaml")
-            .unwrap()
-            .read_to_string(&mut data)
-            .unwrap();
-        data
-    };
+    let data = r#"tests:
+  - {"NAME": "A", x: 123, y: 345 }
+  - {"NAME": "B", name: hello, size: 2000000}
+"#;
 
    match args.size {
-        32 => {
+        InputSize::Small => {
             let tests = serde_yaml::from_str::<test32::TestArray>(&data).unwrap();
             run_tests(&tests.tests, &123);
         },
 
-       64 => {
+       InputSize::Big => {
            let tests = serde_yaml::from_str::<test64::TestArray>(&data).unwrap();
            run_tests(&tests.tests, &321);
        }
-        _ => panic!("bad size"),
     };
 }
